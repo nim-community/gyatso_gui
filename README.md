@@ -7,6 +7,8 @@ A sleek, high-performance chess GUI for [Gyatso Chess Engine](https://github.com
 ![Stars](https://img.shields.io/github/stars/nim-community/gyatso_gui?style=social)
 ![Issues](https://img.shields.io/github/issues/nim-community/gyatso_gui)
 
+![Screenshot](screenshot.png)
+
 ## Overview
 
 Gyatso GUI is a native cross-platform chess interface that brings the powerful [Gyatso Chess Engine](https://github.com/GyatsoYT/GyatsoChess) to life with a beautiful, responsive graphical interface. Experience tournament-level chess analysis and play with hardware-accelerated rendering and NNUE-based evaluation.
@@ -50,10 +52,6 @@ Gyatso GUI is a native cross-platform chess interface that brings the powerful [
 - **Classic chess board** with light/dark squares
 - **Proper board orientation** - White always at bottom
 - **Clean, minimal interface**
-
-## Screenshots
-
-*Screenshots coming soon*
 
 ## Installation
 
@@ -118,17 +116,17 @@ nimble build
 gyatso_gui/
 ├── src/
 │   ├── gyatso_gui.nim       # Main application entry point
-│   └── gyatso_gui/
-│       ├── board.nim        # Chess board representation & rules
-│       ├── search.nim       # Alpha-beta search with PVS
-│       ├── nnue.nim         # NNUE neural network evaluation
-│       ├── hce.nim          # Hand-crafted evaluation
-│       ├── movegen.nim      # Move generation (magic bitboards)
-│       ├── eval.nim         # Evaluation orchestration
-│       ├── audio.nim        # Cross-platform audio playback
-│       └── zobrist.nim      # Zobrist hashing for TT
-├── Net/
-│   └── GyatsoNet.bin        # NNUE network weights
+│   ├── gyatso_gui/
+│   │   ├── board.nim        # Chess board representation & rules
+│   │   ├── search.nim       # Alpha-beta search with PVS
+│   │   ├── nnue.nim         # NNUE neural network evaluation
+│   │   ├── hce.nim          # Hand-crafted evaluation
+│   │   ├── movegen.nim      # Move generation (magic bitboards)
+│   │   ├── eval.nim         # Evaluation orchestration
+│   │   ├── audio.nim        # Cross-platform audio playback
+│   │   └── zobrist.nim      # Zobrist hashing for TT
+│   └── Net/
+│       └── GyatsoNet.bin    # NNUE network weights
 ├── assets/
 │   └── placed.mp3           # Move sound effect
 └── compile.bat / compile.sh # Build scripts with PGO support
