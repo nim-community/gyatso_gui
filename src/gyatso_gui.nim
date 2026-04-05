@@ -762,7 +762,11 @@ when isMainModule:
 
   startEngineThread()
 
+  const targetFrameTime = initDuration(milliseconds = 33)  # ~30 FPS - reduce CPU usage
+
   while not window.windowShouldClose:
+    let frameStart = getMonoTime()
+    
     checkEngineResult()
 
     mouseReleased = false
@@ -800,6 +804,13 @@ when isMainModule:
     renderUI()
 
     window.swapBuffers()
+    
+    # Frame rate limiting: sleep to maintain ~60 FPS
+    let frameEnd = getMonoTime()
+    let elapsed = frameEnd - frameStart
+    if elapsed < targetFrameTime:
+      let sleepTime = targetFrameTime - elapsed
+      sleep(sleepTime.inMilliseconds.int)
 
   stopEngineThread()
   destroyWindow(window)
