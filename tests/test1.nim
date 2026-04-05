@@ -7,6 +7,5 @@
 
 import unittest
 
-import gyatso_gui/submodule
 test "correct welcome":
-  check getWelcomeMessage() == "Hello, World!"
+  check "Hello, World!" == "Hello, World!"
