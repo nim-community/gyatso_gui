@@ -5,6 +5,7 @@ import pixie
 
 import gyatso_gui/[
   coretypes,
+  bitboard,
   board,
   move,
   movegen,
@@ -35,6 +36,15 @@ type
     uiwp, uiwn, uiwb, uiwr, uiwq, uiwk,
     uibp, uibn, uibb, uibr, uibq, uibk
 
+  GameResult = enum
+    grOngoing,
+    grCheckmateWhite,  # White won
+    grCheckmateBlack,  # Black won
+    grStalemate,
+    grInsufficientMaterial,
+    grRepetition,
+    grFiftyMoveRule
+
   GameState = object
     board: Board
     selectedSq: int
@@ -44,6 +54,8 @@ type
     autoMove: bool
     searchDepth: int
     stopFlag: Atomic[bool]
+    gameResult: GameResult
+    gameOver: bool
 
   Color4 = tuple[r,g,b,a: float32]
 
@@ -394,6 +406,8 @@ proc initGame*() =
   game.whiteToMove = true
   game.searchDepth = 12  # Reduced from 15 for faster response
   game.stopFlag.store(false)
+  game.gameResult = grOngoing
+  game.gameOver = false
 
 
 
@@ -442,9 +456,91 @@ proc stopEngineThread() =
   joinThread(engineThread)
   engineInputChan.close()
   engineOutputChan.close()
+proc getKingSquare(board: Board, color: coretypes.Color): Square =
+  ## Find the king's position for a given color
+  let kingPiece = if color == White: WhiteKing else: BlackKing
+  var bb = board.pieceBB[kingPiece]
+  if bb != 0:
+    return bitScanForward(bb).Square
+  return 0.Square
+
+proc isInCheck(board: Board, color: coretypes.Color): bool =
+  ## Check if the given color's king is in check
+  let kingSq = getKingSquare(board, color)
+  let attacker = if color == White: Black else: White
+  return isSquareAttacked(board, kingSq, attacker)
+
+proc checkGameOver() =
+  ## Check for checkmate, stalemate, draw conditions
+  if game.gameOver:
+    return
+
+  # Check for 50-move rule first
+  if game.board.halfMoveClock >= 100:
+    game.gameResult = grFiftyMoveRule
+    game.gameOver = true
+    return
+
+  # Check for threefold repetition
+  if isRepetition(game.board):
+    game.gameResult = grRepetition
+    game.gameOver = true
+    return
+
+  # Check for insufficient material
+  if isInsufficientMaterial(game.board):
+    game.gameResult = grInsufficientMaterial
+    game.gameOver = true
+    return
+
+  # Check for checkmate or stalemate (no legal moves)
+  var board = game.board  # Mutable copy for generating moves
+  var ml: MoveList
+  generateLegalMoves(board, ml)
+  if ml.count == 0:
+    if isInCheck(game.board, game.board.sideToMove):
+      # Checkmate
+      if game.board.sideToMove == White:
+        game.gameResult = grCheckmateBlack  # Black won
+      else:
+        game.gameResult = grCheckmateWhite  # White won
+    else:
+      # Stalemate
+      game.gameResult = grStalemate
+    game.gameOver = true
+
+proc getGameResultText(): string =
+  ## Get display text for game result
+  case game.gameResult:
+    of grCheckmateWhite: return "Checkmate! White wins"
+    of grCheckmateBlack: return "Checkmate! Black wins"
+    of grStalemate: return "Stalemate! Draw"
+    of grInsufficientMaterial: return "Insufficient material! Draw"
+    of grRepetition: return "Threefold repetition! Draw"
+    of grFiftyMoveRule: return "50-move rule! Draw"
+    of grOngoing: return ""
+
+proc resetGame() =
+  ## Reset the game to starting position
+  game.board = initializeBoard()
+  game.selectedSq = -1
+  game.moveHistory = @[]
+  game.whiteToMove = true
+  game.autoMove = false
+  game.gameResult = grOngoing
+  game.gameOver = false
+  game.stopFlag.store(false)
+  # Reset caches
+  lastMoveHistoryLen = 0
+  moveHistoryTexCached.setLen(0)
+  lastStatusText = ""
+  # Reset Auto button texture
+  let btnBg = color(CButton.r, CButton.g, CButton.b, 1.0)
+  let btnTextColor = color(0.98, 0.96, 0.92, 1.0)
+  btn3Tex = renderTextToTexture("Auto: OFF", 120, 36, btnBg, btnTextColor)
 
 proc doEngineMove*() =
-  if game.thinking: return
+  if game.thinking or game.gameOver: return
 
   game.thinking = true
   game.stopFlag.store(false)
@@ -455,7 +551,7 @@ proc doEngineMove*() =
 proc checkEngineResult() =
   if not game.thinking:
     # Auto move: trigger engine when it's Black's turn and auto mode is on
-    if game.autoMove and not game.whiteToMove and game.board.sideToMove == Black:
+    if game.autoMove and not game.gameOver and not game.whiteToMove and game.board.sideToMove == Black:
       doEngineMove()
     return
 
@@ -475,6 +571,7 @@ proc checkEngineResult() =
           game.moveHistory.add(res.msg)
           game.whiteToMove = game.board.sideToMove == White
           playPlacedSound()
+          checkGameOver()
     else:
       echo "MAIN: Received invalid move string (too short)"
 
@@ -482,7 +579,6 @@ proc checkEngineResult() =
   else:
     # No result yet, engine still thinking
     discard
-
 
 proc pixelToSquare(px, py: float64): int =
   let bx = px - BoardX.float64
@@ -498,6 +594,8 @@ proc pixelToSquare(px, py: float64): int =
   result = rank * 8 + file
 
 proc tryMakeMove(fromSq, toSq: int): bool =
+  if game.gameOver:
+    return false
   if fromSq < 0 or fromSq > 63 or toSq < 0 or toSq > 63:
     return false
 
@@ -515,6 +613,7 @@ proc tryMakeMove(fromSq, toSq: int): bool =
       game.moveHistory.add(uci)
       game.whiteToMove = game.board.sideToMove == White
       playPlacedSound()
+      checkGameOver()
       return true
 
   return false
@@ -611,15 +710,20 @@ proc renderUI() =
 
   # Status section - cache texture to avoid recreating every frame
   if font.isFontLoaded:
-    let statusText = if game.thinking: "Engine thinking..."
+    let statusText = if game.gameOver: getGameResultText()
+                     elif game.thinking: "Engine thinking..."
                      elif game.whiteToMove: "White to move"
                      else: "Black to move"
     # Only recreate texture when status changes
     if statusText != lastStatusText:
       lastStatusText = statusText
       font.size = 16.0
-      let statusColor = if game.thinking: color(0.6, 0.4, 0.2, 1.0)
-                        else: color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0)
+      let statusColor = if game.gameOver:
+                          color(0.8, 0.2, 0.2, 1.0)  # Red for game over
+                        elif game.thinking:
+                          color(0.6, 0.4, 0.2, 1.0)
+                        else:
+                          color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0)
       statusTexCached = renderTextToTexture(statusText, 220, 28,
                                             color(CPanel.r, CPanel.g, CPanel.b, 1.0),
                                             statusColor)
@@ -640,7 +744,9 @@ proc renderUI() =
                    mouseY >= currentY.float64 and mouseY <= (currentY + btnH).float64
   let btnPressed = btnHovered and mousePressed
 
-  let btnColor = if btnPressed:
+  let btnColor = if game.gameOver:
+                   (0.5f, 0.5f, 0.5f, 1.0f)  # Gray when disabled
+                 elif btnPressed:
                    CButtonActive
                  elif btnHovered:
                    CButtonHover
@@ -655,7 +761,7 @@ proc renderUI() =
   if btn1Tex.id != 0:
     drawTexture(btn1Tex, btnX + (btnW - btn1Tex.width.float32) / 2, currentY + (btnH - btn1Tex.height.float32) / 2)
 
-  if btnHovered and mouseReleased and not game.thinking:
+  if btnHovered and mouseReleased and not game.thinking and not game.gameOver:
     doEngineMove()
 
   currentY += btnH + 12.0f
@@ -681,19 +787,7 @@ proc renderUI() =
     drawTexture(btn2Tex, btnX + (btnW - btn2Tex.width.float32) / 2, currentY + (btnH - btn2Tex.height.float32) / 2)
 
   if btn2Hovered and mouseReleased:
-    game.board = initializeBoard()
-    game.selectedSq = -1
-    game.moveHistory = @[]
-    game.whiteToMove = true
-    game.autoMove = false
-    # Reset caches
-    lastMoveHistoryLen = 0
-    moveHistoryTexCached.setLen(0)
-    lastStatusText = ""
-    # Reset Auto button texture
-    let btnBg = color(CButton.r, CButton.g, CButton.b, 1.0)
-    let btnTextColor = color(0.98, 0.96, 0.92, 1.0)
-    btn3Tex = renderTextToTexture("Auto: OFF", 120, 36, btnBg, btnTextColor)
+    resetGame()
 
   currentY += btnH + 12.0f
 
@@ -702,7 +796,9 @@ proc renderUI() =
                     mouseY >= currentY.float64 and mouseY <= (currentY + btnH).float64
   let btn3Pressed = btn3Hovered and mousePressed
 
-  let btn3Color = if game.autoMove:
+  let btn3Color = if game.gameOver:
+                    (0.5f, 0.5f, 0.5f, 1.0f)  # Gray when disabled
+                  elif game.autoMove:
                     (0.45f, 0.65f, 0.45f, 1.0f)  # Green when ON
                   elif btn3Pressed:
                     CButtonActive
@@ -720,7 +816,7 @@ proc renderUI() =
   if btn3Tex.id != 0:
     drawTexture(btn3Tex, btnX + (btnW - btn3Tex.width.float32) / 2, currentY + (btnH - btn3Tex.height.float32) / 2)
 
-  if btn3Hovered and mouseReleased:
+  if btn3Hovered and mouseReleased and not game.gameOver:
     game.autoMove = not game.autoMove
     # Recreate texture with new text
     let btnBg = if game.autoMove: color(0.45, 0.65, 0.45, 1.0) else: color(CButton.r, CButton.g, CButton.b, 1.0)
@@ -792,7 +888,7 @@ when isMainModule:
   discard window.setKeyCallback(proc(w: Window, key, scancode, action, mods: int32) {.cdecl.} =
     if key == KEY_ESCAPE and action == PRESS:
       w.setWindowShouldClose(true)
-    if key == KEY_F9 and action == PRESS and not game.thinking:
+    if key == KEY_F9 and action == PRESS and not game.thinking and not game.gameOver:
       doEngineMove()
   )
 
@@ -819,7 +915,7 @@ when isMainModule:
 
     window.getCursorPos(mouseX.addr, mouseY.addr)
 
-    if mouseReleased and not game.thinking:
+    if mouseReleased and not game.thinking and not game.gameOver:
       let sq = pixelToSquare(mouseX, mouseY)
       if sq >= 0:
         if game.selectedSq < 0:
