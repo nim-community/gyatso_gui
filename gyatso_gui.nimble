@@ -12,7 +12,7 @@ bin           = @["gyatso_gui"]
 # Dependencies
 
 requires "nim >= 2.2.4"
-requires "nglfw"
+requires "https://github.com/RowDaBoat/nglfw"
 requires "pixie"
 requires "vmath"
 requires "opengl"
