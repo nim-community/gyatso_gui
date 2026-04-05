@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.1.0"
+version       = "0.1.1"
 author        = "bung87"
 description   = "A sleek, high-performance chess GUI for Gyatso Chess Engine"
 license       = "GPL-3.0-or-later"
