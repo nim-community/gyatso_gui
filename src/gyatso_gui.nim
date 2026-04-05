@@ -71,12 +71,31 @@ var
   mouseX, mouseY: float64
   mousePressed, mouseReleased: bool
   font: Font
+  # Cached text textures
+  lastStatusText: string
+  titleCached: bool = false
+  # Board coordinate textures (a-h, 1-8)
+  coordLabelsCached: bool = false
+  # Move history cache
+  lastMoveHistoryLen: int = 0
+  historyTitleCached: bool = false
 
 # 缓存按钮文字纹理
 type ButtonTex = object
   id: GLuint
   width, height: int
 var btn1Tex, btn2Tex, btn3Tex: ButtonTex
+
+# Cached text textures (after type definition)
+var
+  titleTexCached: ButtonTex
+  statusTexCached: ButtonTex
+  # Board coordinate textures (a-h, 1-8)
+  fileLabelTex: array[8, ButtonTex]
+  rankLabelTex: array[8, ButtonTex]
+  # Move history cache
+  moveHistoryTexCached: seq[ButtonTex] = @[]
+  historyTitleTexCached: ButtonTex
 
 # Piece image data (embedded using staticRead)
 const PieceImageData = block:
@@ -524,28 +543,34 @@ proc renderBoard() =
         let pieceSize = SquareSize.float32
         drawTexturedPiece(pieceX, pieceY, pieceSize, pieceTextures[p.ord])
 
-  # Draw board coordinates
+  # Draw board coordinates - cache textures
   if font.isFontLoaded:
     let coordSize = 20
     let coordColor = color(0.4, 0.25, 0.1, 1.0)  # Brown text color
+    
+    # Cache coordinate labels once
+    if not coordLabelsCached:
+      for file in 0..7:
+        let label = $chr(ord('a') + file)
+        fileLabelTex[file] = renderTextToTexture(label, coordSize, coordSize, color(0, 0, 0, 0), coordColor)
+      for rank in 0..7:
+        let label = $chr(ord('1') + rank)
+        rankLabelTex[rank] = renderTextToTexture(label, coordSize, coordSize, color(0, 0, 0, 0), coordColor)
+      coordLabelsCached = true
 
     # Draw file labels (a-h) at bottom
     for file in 0..7:
-      let label = $chr(ord('a') + file)
       let x = BoardX + file * SquareSize + SquareSize div 2 - coordSize div 2
       let y = BoardY + BoardSize + 5
-      let tex = renderTextToTexture(label, coordSize, coordSize, color(0, 0, 0, 0), coordColor)
-      if tex.id != 0:
-        drawTexture(tex, x.float32, y.float32)
+      if fileLabelTex[file].id != 0:
+        drawTexture(fileLabelTex[file], x.float32, y.float32)
 
     # Draw rank labels (1-8) at left
     for rank in 0..7:
-      let label = $chr(ord('1') + rank)
       let x = BoardX - coordSize - 5
       let y = BoardY + (7 - rank) * SquareSize + SquareSize div 2 - coordSize div 2
-      let tex = renderTextToTexture(label, coordSize, coordSize, color(0, 0, 0, 0), coordColor)
-      if tex.id != 0:
-        drawTexture(tex, x.float32, y.float32)
+      if rankLabelTex[rank].id != 0:
+        drawTexture(rankLabelTex[rank], x.float32, y.float32)
 
 proc renderUI() =
   # Panel dimensions and spacing system
@@ -567,34 +592,39 @@ proc renderUI() =
 
   var currentY = panelY + padY + 4.0f
 
-  # Title area
+  # Title area - cache texture
   if font.isFontLoaded:
-    let title = "Game Controls"
-    font.size = 22.0
-    font.paint.color = color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0)
-    let bounds = font.layoutBounds(title)
-    let titleX = panelX.float32 + (panelW - bounds.x) / 2
-    let titleTex = renderTextToTexture(title, bounds.x.int + 10, bounds.y.int + 5,
-                                        color(CPanel.r, CPanel.g, CPanel.b, 1.0),
-                                        color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0))
-    if titleTex.id != 0:
-      drawTexture(titleTex, titleX, currentY)
+    if not titleCached:
+      let title = "Game Controls"
+      font.size = 22.0
+      font.paint.color = color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0)
+      let bounds = font.layoutBounds(title)
+      titleTexCached = renderTextToTexture(title, bounds.x.int + 10, bounds.y.int + 5,
+                                           color(CPanel.r, CPanel.g, CPanel.b, 1.0),
+                                           color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0))
+      titleCached = true
+    if titleTexCached.id != 0:
+      let titleX = panelX.float32 + (panelW - titleTexCached.width.float32) / 2
+      drawTexture(titleTexCached, titleX, currentY)
 
   currentY += 36.0f
 
-  # Status section
+  # Status section - cache texture to avoid recreating every frame
   if font.isFontLoaded:
     let statusText = if game.thinking: "Engine thinking..."
                      elif game.whiteToMove: "White to move"
                      else: "Black to move"
-    font.size = 16.0
-    let statusColor = if game.thinking: color(0.6, 0.4, 0.2, 1.0)
-                      else: color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0)
-    let statusTex = renderTextToTexture(statusText, 220, 28,
-                                        color(CPanel.r, CPanel.g, CPanel.b, 1.0),
-                                        statusColor)
-    if statusTex.id != 0:
-      drawTexture(statusTex, panelX.float32 + padX, currentY)
+    # Only recreate texture when status changes
+    if statusText != lastStatusText:
+      lastStatusText = statusText
+      font.size = 16.0
+      let statusColor = if game.thinking: color(0.6, 0.4, 0.2, 1.0)
+                        else: color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0)
+      statusTexCached = renderTextToTexture(statusText, 220, 28,
+                                            color(CPanel.r, CPanel.g, CPanel.b, 1.0),
+                                            statusColor)
+    if statusTexCached.id != 0:
+      drawTexture(statusTexCached, panelX.float32 + padX, currentY)
 
   currentY += 32.0f
 
@@ -656,6 +686,10 @@ proc renderUI() =
     game.moveHistory = @[]
     game.whiteToMove = true
     game.autoMove = false
+    # Reset caches
+    lastMoveHistoryLen = 0
+    moveHistoryTexCached.setLen(0)
+    lastStatusText = ""
     # Reset Auto button texture
     let btnBg = color(CButton.r, CButton.g, CButton.b, 1.0)
     let btnTextColor = color(0.98, 0.96, 0.92, 1.0)
@@ -699,29 +733,40 @@ proc renderUI() =
   rect(panelX.float32 + padX, currentY, panelW - padX * 2, 1.0f, CPanelBorder)
   currentY += 12.0f
 
-  if font.isFontLoaded and game.moveHistory.len > 0:
-    font.size = 14.0
-    let historyTitle = "Move History"
-    let titleTex = renderTextToTexture(historyTitle, 120, 24,
-                                        color(CPanel.r, CPanel.g, CPanel.b, 1.0),
-                                        color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0))
-    if titleTex.id != 0:
-      drawTexture(titleTex, panelX.float32 + padX, currentY)
+  if font.isFontLoaded:
+    # Cache history title
+    if not historyTitleCached:
+      let historyTitle = "Move History"
+      historyTitleTexCached = renderTextToTexture(historyTitle, 120, 24,
+                                                  color(CPanel.r, CPanel.g, CPanel.b, 1.0),
+                                                  color(CTextDark.r, CTextDark.g, CTextDark.b, 1.0))
+      historyTitleCached = true
+    if historyTitleTexCached.id != 0 and game.moveHistory.len > 0:
+      drawTexture(historyTitleTexCached, panelX.float32 + padX, currentY)
 
     currentY += 26.0f
 
-    # Show last few moves
-    let startIdx = max(0, game.moveHistory.len - 6)
-    for i in startIdx ..< game.moveHistory.len:
-      let moveNum = (i div 2) + 1
-      let prefix = if i mod 2 == 0: $moveNum & ". " else: "    "
-      let moveText = prefix & game.moveHistory[i]
-      let moveTex = renderTextToTexture(moveText, 200, 22,
-                                        color(CPanel.r, CPanel.g, CPanel.b, 1.0),
-                                        color(0.45, 0.35, 0.25, 1.0))
-      if moveTex.id != 0:
-        drawTexture(moveTex, panelX.float32 + padX + 5.0f, currentY)
-      currentY += 22.0f
+    # Show last few moves - only update cache when history changes
+    if game.moveHistory.len != lastMoveHistoryLen:
+      lastMoveHistoryLen = game.moveHistory.len
+      # Clear old cache and create new textures
+      moveHistoryTexCached.setLen(0)
+      let startIdx = max(0, game.moveHistory.len - 6)
+      for i in startIdx ..< game.moveHistory.len:
+        let moveNum = (i div 2) + 1
+        let prefix = if i mod 2 == 0: $moveNum & ". " else: "    "
+        let moveText = prefix & game.moveHistory[i]
+        let moveTex = renderTextToTexture(moveText, 200, 22,
+                                          color(CPanel.r, CPanel.g, CPanel.b, 1.0),
+                                          color(0.45, 0.35, 0.25, 1.0))
+        moveHistoryTexCached.add(moveTex)
+    
+    # Draw cached move textures
+    var drawY = currentY
+    for tex in moveHistoryTexCached:
+      if tex.id != 0:
+        drawTexture(tex, panelX.float32 + padX + 5.0f, drawY)
+      drawY += 22.0f
 
 
 when isMainModule:
