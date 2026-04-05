@@ -134,9 +134,9 @@ elif defined(linux):
       return
 
     let format = if bits == 8: SND_PCM_FORMAT_U8 else: SND_PCM_FORMAT_S16_LE
-    let access = 3
+    let access = 3.int32
 
-    if snd_pcm_set_params(pcm, format, access, channels, sampleRate, 1, 500000) < 0:
+    if snd_pcm_set_params(pcm, format, access, channels, sampleRate, 1.int32, 500000.uint32) < 0:
       discard snd_pcm_close(pcm)
       return
 
