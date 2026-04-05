@@ -44,7 +44,7 @@ Gyatso GUI is a native cross-platform chess interface that brings the powerful [
   - Piece mobility bonuses
 
 ### 🎵 Audio
-- **Satisfying move sounds** on piece placement
+- **Satisfying move sounds** on piece placement (WAV format)
 - **Cross-platform audio** (afplay on macOS, aplay on Linux)
 
 ### 🎨 Visual Design
@@ -115,20 +115,16 @@ nimble build
 ```
 gyatso_gui/
 ├── src/
-│   ├── gyatso_gui.nim       # Main application entry point
+│   ├── gyatso_gui.nim       # Main GUI application (OpenGL rendering)
 │   ├── gyatso_gui/
-│   │   ├── board.nim        # Chess board representation & rules
-│   │   ├── search.nim       # Alpha-beta search with PVS
-│   │   ├── nnue.nim         # NNUE neural network evaluation
-│   │   ├── hce.nim          # Hand-crafted evaluation
-│   │   ├── movegen.nim      # Move generation (magic bitboards)
-│   │   ├── eval.nim         # Evaluation orchestration
 │   │   ├── audio.nim        # Cross-platform audio playback
-│   │   └── zobrist.nim      # Zobrist hashing for TT
+│   │   └── ...              # Gyatso engine modules
 │   └── Net/
 │       └── GyatsoNet.bin    # NNUE network weights
 ├── assets/
-│   └── placed.mp3           # Move sound effect
+│   ├── placed.wav           # Move sound effect
+│   └── pieces/              # Piece textures (PNGs)
+├── screenshot.png           # Screenshot for README
 └── compile.bat / compile.sh # Build scripts with PGO support
 ```
 
@@ -157,7 +153,7 @@ gyatso_gui/
 | `opengl` | OpenGL bindings for Nim |
 | `pixie` | 2D graphics and PNG decoding |
 | `nimsimd` | SIMD intrinsics for AVX2/AVX512 |
-| `gyatso_gui` | This package (main binary) |
+
 
 ## Related Projects
 
